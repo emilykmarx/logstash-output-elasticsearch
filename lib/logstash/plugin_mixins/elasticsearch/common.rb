@@ -18,6 +18,7 @@ module LogStash; module PluginMixins; module ElasticSearch
     # @return [HttpClient] the new http client
     def build_client(license_checker = nil)
       params["license_checker"] = license_checker
+      params["logstash_api_endpoint"] = logstash_api_endpoint
 
       # the following 3 options validation & setup methods are called inside build_client
       # because they must be executed prior to building the client and logstash
@@ -373,6 +374,20 @@ module LogStash; module PluginMixins; module ElasticSearch
         @bulk_request_metrics.increment(:failures)
         retry unless @stopping.true?
       end
+    end
+
+    # IP:port
+    def logstash_api_endpoint
+      return execution_context.agent.instance_variable_get(:@webserver).address()
+    end
+
+    # Could check if we actually write to the specified index, but maybe not helpful -
+      # evidently we wrote to that index in the past.
+    # Could argue that LS core could figure this out itself, but let's dispatch to the output plugin
+      # anyway since could imagine other output plugins might want to scope inputs/filters more narrowly
+    def wtf_handle_trace
+      @logger.info("ZZEM wtf_handle_trace; pipeline #{execution_context.pipeline_id()}")
+      # XXX: return inputs&filters of pipeline to LS core, LS core calls their trace handler
     end
 
     def pipeline_shutdown_requested?

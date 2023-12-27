@@ -1,5 +1,7 @@
 require "concurrent/atomic/atomic_reference"
 require "logstash/plugin_mixins/elasticsearch/noop_license_checker"
+require "logstash/api/modules/wtf"
+
 
 module LogStash; module Outputs; class ElasticSearch; class HttpClient;
   class Pool
@@ -53,7 +55,9 @@ module LogStash; module Outputs; class ElasticSearch; class HttpClient;
       @adapter = adapter
       @metric = options[:metric]
       @initial_urls = initial_urls
-      
+      @index = options[:index]
+      @logstash_api_endpoint = options[:logstash_api_endpoint]
+
       raise ArgumentError, "No URL Normalizer specified!" unless options[:url_normalizer]
       @url_normalizer = options[:url_normalizer]
       DEFAULT_OPTIONS.merge(options).tap do |merged|
@@ -180,11 +184,11 @@ module LogStash; module Outputs; class ElasticSearch; class HttpClient;
         sniff(nodes)
       end
     end
-    
+
     def major_version(version_string)
       version_string.split('.').first.to_i
     end
-    
+
     def sniff(nodes)
       nodes.map do |id,info|
         # Skip master-only nodes
@@ -228,6 +232,20 @@ module LogStash; module Outputs; class ElasticSearch; class HttpClient;
       {}
     end
 
+    # TODO This should go in common.rb so other ES output plugins can use it, but
+    # for some reason, can't call common functions from pool even with same includes
+    def wtf_register(url)
+      @logger.info("Registering WTF plugin with Elasticsearch")
+      # TODO make ES init path configurable in some way - e.g. an option similar to bulk_path?
+      logstash_wtf_api_url = @logstash_api_endpoint + LogStash::Api::Modules::WTF::TRACE_PATH
+      es_wtf_api_path = "_cluster/wtf/init/" + @index
+      es_body = {wtf_api_url: logstash_wtf_api_url} # ES parses this part (as well as the path)
+      ls_body = {plugin_config_name: LogStash::Outputs::ElasticSearch::config_name} # ES just stores this part to be sent in a scope request
+
+      response = perform_request_to_url(url, :post, es_wtf_api_path, body: es_body.merge(ls_body).to_json)
+      raise BadResponseCodeError.new(response.code, url, nil, response.body) unless (200..299).cover?(response.code)
+    end
+
     def health_check_request(url)
       response = perform_request_to_url(url, :head, @healthcheck_path)
       raise BadResponseCodeError.new(response.code, url, nil, response.body) unless (200..299).cover?(response.code)
@@ -246,6 +264,8 @@ module LogStash; module Outputs; class ElasticSearch; class HttpClient;
             if !elasticsearch?(url)
               raise LogStash::ConfigurationError, "Could not connect to a compatible version of Elasticsearch"
             end
+
+            wtf_register(url)
           end
           # If no exception was raised it must have succeeded!
           logger.warn("Restored connection to ES instance", url: url.sanitized.to_s)
@@ -340,7 +360,7 @@ module LogStash; module Outputs; class ElasticSearch; class HttpClient;
 
     def update_urls(new_urls)
       return if new_urls.nil?
-      
+
       # Normalize URLs
       new_urls = new_urls.map(&method(:normalize_url))
 
@@ -368,14 +388,14 @@ module LogStash; module Outputs; class ElasticSearch; class HttpClient;
       if state_changes[:removed].size > 0 || state_changes[:added].size > 0
         logger.info? && logger.info("Elasticsearch pool URLs updated", :changes => state_changes)
       end
-      
+
       # Run an inline healthcheck anytime URLs are updated
       # This guarantees that during startup / post-startup
       # sniffing we don't have idle periods waiting for the
       # periodic sniffer to allow new hosts to come online
-      healthcheck! 
+      healthcheck!
     end
-    
+
     def size
       @state_mutex.synchronize { @url_info.size }
     end

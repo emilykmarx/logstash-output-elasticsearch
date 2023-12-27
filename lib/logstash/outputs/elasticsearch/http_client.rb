@@ -261,7 +261,7 @@ module LogStash; module Outputs; class ElasticSearch;
                         else
                           nil
                         end
-      
+
       calculated_scheme = calculate_property(uris, :scheme, explicit_scheme, sniffing)
 
       if calculated_scheme && calculated_scheme !~ /https?/
@@ -281,7 +281,7 @@ module LogStash; module Outputs; class ElasticSearch;
       # Enter things like foo:123, bar and wind up with foo:123, bar:9200
       calculate_property(uris, :port, nil, sniffing) || 9200
     end
-    
+
     def uris
       @options[:hosts]
     end
@@ -300,7 +300,7 @@ module LogStash; module Outputs; class ElasticSearch;
 
     def build_adapter(options)
       timeout = options[:timeout] || 0
-      
+
       adapter_options = {
         :socket_timeout => timeout,
         :request_timeout => timeout,
@@ -340,7 +340,7 @@ module LogStash; module Outputs; class ElasticSearch;
       # example: Logstash/7.14.1 (OS=Linux-5.4.0-84-generic-amd64; JVM=AdoptOpenJDK-11.0.11) logstash-output-elasticsearch/11.0.1
       "Logstash/#{LOGSTASH_VERSION} (OS=#{os_name}-#{os_version}-#{os_arch}; JVM=#{jvm_vendor}-#{jvm_version}) logstash-output-elasticsearch/#{plugin_version}"
     end
-    
+
     def build_pool(options)
       adapter = build_adapter(options)
 
@@ -352,7 +352,9 @@ module LogStash; module Outputs; class ElasticSearch;
         :healthcheck_path => options[:healthcheck_path],
         :resurrect_delay => options[:resurrect_delay],
         :url_normalizer => self.method(:host_to_url),
-        :metric => options[:metric]
+        :metric => options[:metric],
+        :index => client_settings[:index],
+        :logstash_api_endpoint => client_settings[:logstash_api_endpoint]
       }
       pool_options[:scheme] = self.scheme if self.scheme
 
@@ -391,7 +393,7 @@ module LogStash; module Outputs; class ElasticSearch;
                     h.query
                   end
       prefixed_raw_query = raw_query && !raw_query.empty? ? "?#{raw_query}" : nil
-      
+
       raw_url = "#{raw_scheme}://#{postfixed_userinfo}#{raw_host}:#{raw_port}#{prefixed_raw_path}#{prefixed_raw_query}"
 
       ::LogStash::Util::SafeURI.new(raw_url)
